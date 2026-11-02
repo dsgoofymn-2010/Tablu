@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  tablu:
+    build: .
+    image: tablu-app
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    # If you need to persist the SQLite DB, you can mount a volume:
+    # volumes:
+    #   - ./backend/restaurant.db:/app/backend/restaurant.db
+

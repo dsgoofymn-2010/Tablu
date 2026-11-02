@@ -137,3 +137,18 @@ Flask will automatically detect `frontend/dist/` and serve the compiled single-p
 - [ARCHITECTURE.md](ARCHITECTURE.md): Data model, API specs, security, and concurrency controls.
 - [WORKFLOW.md](WORKFLOW.md): Development phases and progress log.
 - [AGENT.md](AGENT.md): Guidelines and boundaries for AI assistants.
+
+## Docker Deployment
+
+The project can be containerized using Docker. The Dockerfile builds the frontend assets and serves them with the Flask backend. A `docker-compose.yml` is provided to run the application with a single command.
+
+### Build and Run
+```bash
+# Build the Docker image
+docker build -t tablu-app .
+
+# Start the containers
+docker compose up -d
+```
+
+The app will be accessible at `http://localhost:5000`.
