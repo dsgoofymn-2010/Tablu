@@ -127,6 +127,80 @@ REVIEWS = {
 
 LIST_FIELDS = ("cuisines", "known_for", "amenities")
 
+# (kind, label) per restaurant — matches frontend/public/assets/gallery/<slug>-<n>.jpg
+GALLERY = {
+    "Chettinad Spice Court": [
+        ("food", "Pepper chicken"),
+        ("ambience", "Dining hall"),
+        ("food", "Chettinad gravy"),
+        ("ambience", "Rooftop seating"),
+        ("food", "Filter coffee"),
+        ("ambience", "Corner booth"),
+        ("food", "Crab masala"),
+        ("ambience", "Evening facade"),
+    ],
+    "Koli Kadai House": [
+        ("food", "Koli fried chicken"),
+        ("ambience", "Street-style dining"),
+        ("food", "Kerala parotta"),
+        ("ambience", "Counter seating"),
+        ("food", "Biryani bowl"),
+        ("ambience", "Late-night neon"),
+        ("food", "Chicken 65"),
+        ("ambience", "Family tables"),
+    ],
+    "Anjappar Express": [
+        ("food", "Ghee roast dosa"),
+        ("ambience", "Quick-service hall"),
+        ("food", "Idiyappam with mutton"),
+        ("ambience", "Breakfast counter"),
+        ("food", "Chettinad veg thali"),
+        ("ambience", "Window seats"),
+        ("food", "Filter coffee tumbler"),
+        ("ambience", "Evening rush"),
+    ],
+    "Madras Grill Room": [
+        ("food", "Tandoori platter"),
+        ("ambience", "Grill room interior"),
+        ("food", "Grilled fish"),
+        ("ambience", "Bar corner"),
+        ("food", "Live grill counter"),
+        ("ambience", "Private dining"),
+        ("food", "Dessert plate"),
+        ("ambience", "Jazz corner"),
+    ],
+    "T Nagar Tandoor": [
+        ("food", "Butter chicken"),
+        ("ambience", "Mughlai hall"),
+        ("food", "Dum biryani"),
+        ("ambience", "Tandoor counter"),
+        ("food", "Seekh kebab"),
+        ("ambience", "Family seating"),
+        ("food", "Tandoori roti basket"),
+        ("ambience", "Night facade"),
+    ],
+}
+
+
+def slugify(name):
+    out = []
+    for ch in name.lower():
+        out.append(ch if ch.isalnum() else "-")
+    slug = "".join(out)
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug.strip("-")
+
+
+def gallery_rows(name):
+    """[(kind, label, path), ...] for a restaurant, or []."""
+    items = GALLERY.get(name, [])
+    slug = slugify(name)
+    return [
+        (kind, label, f"/assets/gallery/{slug}-{i + 1}.jpg")
+        for i, (kind, label) in enumerate(items)
+    ]
+
 
 def profile_row(name):
     p = PROFILES.get(name)

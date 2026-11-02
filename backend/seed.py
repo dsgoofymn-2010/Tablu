@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from db import DB_PATH, get_connection
-from profiles import REVIEWS, profile_row
+from profiles import REVIEWS, gallery_rows, profile_row
 from security import hash_password
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
@@ -64,6 +64,11 @@ def seed():
                 "INSERT INTO reviews (restaurant_id, author_name, rating, body, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (restaurant_id, author, rating, body, created),
+            )
+        for kind, label, path in gallery_rows(name):
+            conn.execute(
+                "INSERT INTO photos (restaurant_id, kind, label, path) VALUES (?, ?, ?, ?)",
+                (restaurant_id, kind, label, path),
             )
         seat_ids = []
 

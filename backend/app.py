@@ -8,7 +8,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory, session
 
 from db import get_connection
-from profiles import REVIEWS, profile_dict, profile_row
+from profiles import REVIEWS, gallery_rows, profile_dict, profile_row
 from security import hash_password, needs_rehash, verify_password
 
 FRONTEND = Path(__file__).parent.parent / "frontend"
@@ -68,6 +68,15 @@ def migrate():
         " created_at TEXT NOT NULL)"
     )
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS photos ("
+        " id INTEGER PRIMARY KEY,"
+        " restaurant_id INTEGER NOT NULL REFERENCES restaurants(id),"
+        " kind TEXT NOT NULL,"
+        " label TEXT NOT NULL,"
+        " path TEXT NOT NULL)"
+    )
+
     for row in conn.execute("SELECT id, name, cuisines FROM restaurants").fetchall():
         if row["cuisines"]:
             continue
@@ -79,6 +88,14 @@ def migrate():
         for row in conn.execute("SELECT id, name FROM restaurants").fetchall():
             for author, rating, body, created in REVIEWS.get(row["name"], []):
                 conn.execute(REVIEWS_SQL, (row["id"], author, rating, body, created))
+
+    if conn.execute("SELECT COUNT(*) AS n FROM photos").fetchone()["n"] == 0:
+        for row in conn.execute("SELECT id, name FROM restaurants").fetchall():
+            for kind, label, path in gallery_rows(row["name"]):
+                conn.execute(
+                    "INSERT INTO photos (restaurant_id, kind, label, path) VALUES (?, ?, ?, ?)",
+                    (row["id"], kind, label, path),
+                )
 
     conn.commit()
     conn.close()
@@ -302,6 +319,12 @@ def restaurant_details(restaurant_id):
         "WHERE restaurant_id = ? ORDER BY created_at DESC",
         (restaurant_id,),
     ).fetchall()
+
+    photos = conn.execute(
+        "SELECT id, kind, label, path FROM photos "
+        "WHERE restaurant_id = ? ORDER BY id",
+        (restaurant_id,),
+    ).fetchall()
     conn.close()
 
     return jsonify(
@@ -310,7 +333,88 @@ def restaurant_details(restaurant_id):
             "floors": [dict(f) for f in floors],
             "seats": [dict(s) for s in seats],
             "reviews": [dict(r) for r in reviews],
+            "photos": [dict(p) for p in photos],
         }
+    )
+
+
+@app.post("/api/reviews")
+def create_review():
+    user = current_user()
+    if user is None:
+        return jsonify({"error": "log in required"}), 401
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "JSON body required"}), 400
+
+    try:
+        restaurant_id = int(body.get("restaurant_id"))
+        rating = int(body.get("rating"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "restaurant_id and rating must be integers"}), 400
+    text = body.get("body", "")
+    if not isinstance(text, str) or not (10 <= len(text.strip()) <= 1000):
+        return jsonify({"error": "review must be 10-1000 characters"}), 400
+    if not (1 <= rating <= 5):
+        return jsonify({"error": "rating must be between 1 and 5"}), 400
+
+    conn = get_connection()
+    exists = conn.execute(
+        "SELECT 1 FROM restaurants WHERE id = ?", (restaurant_id,)
+    ).fetchone()
+    if exists is None:
+        conn.close()
+        return jsonify({"error": "restaurant not found"}), 404
+
+    # only diners who actually booked a table here may review
+    dined = conn.execute(
+        """
+        SELECT 1 FROM bookings b
+          JOIN seats s ON s.id = b.seat_id
+          JOIN floors f ON f.id = s.floor_id
+         WHERE f.restaurant_id = ? AND b.user_name = ?
+         LIMIT 1
+        """,
+        (restaurant_id, user["username"]),
+    ).fetchone()
+    if dined is None:
+        conn.close()
+        return (
+            jsonify({"error": "you can only review restaurants you have booked"}),
+            403,
+        )
+
+    already = conn.execute(
+        "SELECT id FROM reviews WHERE restaurant_id = ? AND author_name = ?",
+        (restaurant_id, user["username"]),
+    ).fetchone()
+    if already:
+        conn.close()
+        return jsonify({"error": "you have already reviewed this restaurant"}), 409
+
+    created_at = now_iso()
+    cur = conn.execute(
+        "INSERT INTO reviews (restaurant_id, author_name, rating, body, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (restaurant_id, user["username"], rating, text.strip(), created_at),
+    )
+    review_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return (
+        jsonify(
+            {
+                "review": {
+                    "id": review_id,
+                    "author_name": user["username"],
+                    "rating": rating,
+                    "body": text.strip(),
+                    "created_at": created_at,
+                }
+            }
+        ),
+        201,
     )
 
 

@@ -10,7 +10,6 @@ import {
   CalendarDays,
   Users,
   Armchair,
-  UtensilsCrossed,
   Sparkles,
   Star,
   MapPin,
@@ -44,6 +43,13 @@ interface Review {
   created_at: string;
 }
 
+interface Photo {
+  id: number;
+  kind: 'food' | 'ambience';
+  label: string;
+  path: string;
+}
+
 interface RestaurantProfile {
   id: number;
   name: string;
@@ -68,6 +74,7 @@ interface RestaurantData {
   floors: Floor[];
   seats: Seat[];
   reviews: Review[];
+  photos: Photo[];
 }
 
 interface SeatStatusResponse {
@@ -93,17 +100,6 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
-
-const PHOTOS = [
-  { id: 1, kind: 'ambience', label: 'Dining hall', tone: 0 },
-  { id: 2, kind: 'food', label: 'Signature spread', tone: 2 },
-  { id: 3, kind: 'ambience', label: 'Rooftop', tone: 1 },
-  { id: 4, kind: 'food', label: 'From the grill', tone: 3 },
-  { id: 5, kind: 'ambience', label: 'Bar corner', tone: 1 },
-  { id: 6, kind: 'food', label: 'House classics', tone: 2 },
-  { id: 7, kind: 'ambience', label: 'Private seating', tone: 0 },
-  { id: 8, kind: 'food', label: 'Desserts', tone: 3 },
-] as const;
 
 type PhotoFilter = 'all' | 'food' | 'ambience';
 
@@ -226,6 +222,12 @@ export const RestaurantDetailPage: React.FC = () => {
   const [photoFilter, setPhotoFilter] = useState<PhotoFilter>('all');
   const [copied, setCopied] = useState<'link' | 'address' | null>(null);
   const tabsRef = useRef<HTMLElement | null>(null);
+
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewBody, setReviewBody] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState(false);
 
   const [seatStatuses, setSeatStatuses] = useState<SeatStatusResponse>({ booked: [], held: [] });
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([]);
@@ -414,6 +416,50 @@ export const RestaurantDetailPage: React.FC = () => {
     );
   };
 
+  const submitReview = async () => {
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent(`/restaurants/${id}`)}`);
+      return;
+    }
+    if (reviewBody.trim().length < 10) {
+      setReviewError('Tell us a little more — at least 10 characters.');
+      return;
+    }
+    setReviewSubmitting(true);
+    setReviewError(null);
+    setReviewSuccess(false);
+    try {
+      const res = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          restaurant_id: Number(id),
+          rating: reviewRating,
+          body: reviewBody.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        navigate(`/login?next=${encodeURIComponent(`/restaurants/${id}`)}`);
+        return;
+      }
+      if (!res.ok) {
+        setReviewError(data.error || 'Could not post your review.');
+        return;
+      }
+      setRestaurantData((prev) =>
+        prev ? { ...prev, reviews: [data.review, ...prev.reviews] } : prev
+      );
+      setReviewBody('');
+      setReviewRating(5);
+      setReviewSuccess(true);
+    } catch {
+      setReviewError('Network error — please try again.');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
   const copyText = async (text: string, which: 'link' | 'address') => {
     try {
       await navigator.clipboard.writeText(text);
@@ -451,7 +497,7 @@ export const RestaurantDetailPage: React.FC = () => {
     );
   }
 
-  const { restaurant, floors, seats, reviews } = restaurantData;
+  const { restaurant, floors, seats, reviews, photos } = restaurantData;
   const currentFloor = floors.find((f) => f.id === activeFloorId);
   const floorSeats = seats.filter((s) => s.floor_id === activeFloorId);
 
@@ -468,7 +514,8 @@ export const RestaurantDetailPage: React.FC = () => {
       : '';
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${restaurant.latitude},${restaurant.longitude}`;
   const telHref = restaurant.phone ? `tel:${restaurant.phone.replace(/\s+/g, '')}` : '';
-  const filteredPhotos = PHOTOS.filter((p) => photoFilter === 'all' || p.kind === photoFilter);
+  const filteredPhotos = photos.filter((p) => photoFilter === 'all' || p.kind === photoFilter);
+  const heroPhoto = photos[0];
 
   return (
     <div className="canvas booking-page">
@@ -542,35 +589,32 @@ export const RestaurantDetailPage: React.FC = () => {
       </header>
 
       <div className="gallery-strip" aria-label="Photo previews">
-        <button
-          type="button"
-          className={`gallery-tile is-hero gallery-tone-${PHOTOS[0].tone}`}
-          onClick={() => jumpToTab('photos')}
-        >
-          <Armchair size={44} strokeWidth={1.2} />
-          <span className="tile-label">{PHOTOS[0].label}</span>
-          <span className="gallery-overlay">
-            <span className="gallery-pill">
-              View all photos <ArrowRight size={13} />
+        {heroPhoto && (
+          <button
+            type="button"
+            className="gallery-tile is-hero"
+            onClick={() => jumpToTab('photos')}
+          >
+            <img src={heroPhoto.path} alt={heroPhoto.label} className="gallery-img" />
+            <span className="tile-label">{heroPhoto.label}</span>
+            <span className="gallery-overlay">
+              <span className="gallery-pill">
+                View all photos <ArrowRight size={13} />
+              </span>
             </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={`gallery-tile gallery-tone-${PHOTOS[1].tone}`}
-          onClick={() => jumpToTab('photos')}
-        >
-          <UtensilsCrossed size={30} strokeWidth={1.2} />
-          <span className="tile-label">{PHOTOS[1].label}</span>
-        </button>
-        <button
-          type="button"
-          className={`gallery-tile gallery-tone-${PHOTOS[2].tone}`}
-          onClick={() => jumpToTab('photos')}
-        >
-          <MapPin size={30} strokeWidth={1.2} />
-          <span className="tile-label">{PHOTOS[2].label}</span>
-        </button>
+          </button>
+        )}
+        {photos.slice(1, 3).map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className="gallery-tile"
+            onClick={() => jumpToTab('photos')}
+          >
+            <img src={p.path} alt={p.label} className="gallery-img" loading="lazy" />
+            <span className="tile-label">{p.label}</span>
+          </button>
+        ))}
       </div>
 
       <nav className="detail-tabs" role="tablist" aria-label="Restaurant sections" ref={tabsRef}>
@@ -665,7 +709,7 @@ export const RestaurantDetailPage: React.FC = () => {
             <div className="detail-pane">
               <div className="photo-filters" role="tablist" aria-label="Photo filters">
                 {(['all', 'food', 'ambience'] as const).map((f) => {
-                  const count = f === 'all' ? PHOTOS.length : PHOTOS.filter((p) => p.kind === f).length;
+                  const count = f === 'all' ? photos.length : photos.filter((p) => p.kind === f).length;
                   return (
                     <button
                       key={f}
@@ -681,15 +725,10 @@ export const RestaurantDetailPage: React.FC = () => {
               </div>
               <div className="photo-grid">
                 {filteredPhotos.map((p) => (
-                  <div key={p.id} className={`photo-tile gallery-tone-${p.tone}`}>
-                    {p.kind === 'food' ? (
-                      <UtensilsCrossed size={26} strokeWidth={1.2} />
-                    ) : (
-                      <Armchair size={26} strokeWidth={1.2} />
-                    )}
-                    <span className="tile-label">{p.label}</span>
-                    <span className="coming-chip">Coming soon</span>
-                  </div>
+                  <figure key={p.id} className="photo-tile">
+                    <img src={p.path} alt={p.label} loading="lazy" className="gallery-img" />
+                    <figcaption className="tile-label">{p.label}</figcaption>
+                  </figure>
                 ))}
               </div>
             </div>
@@ -697,6 +736,67 @@ export const RestaurantDetailPage: React.FC = () => {
 
           {activeTab === 'reviews' && (
             <div className="detail-pane">
+              <section className="info-card review-form-card">
+                <h3>Write a review</h3>
+                <p className="info-sub">
+                  {user
+                    ? 'Share how your visit went — only guests who booked a table here can post.'
+                    : 'Sign in after you dine to share your experience.'}
+                </p>
+
+                <div className="review-stars" role="radiogroup" aria-label="Your rating">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      role="radio"
+                      aria-checked={reviewRating === n}
+                      aria-label={`${n} star${n > 1 ? 's' : ''}`}
+                      className={`star-pick${n <= reviewRating ? ' is-on' : ''}`}
+                      onClick={() => setReviewRating(n)}
+                    >
+                      <Star size={22} fill={n <= reviewRating ? 'currentColor' : 'none'} />
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  className="review-input"
+                  rows={4}
+                  maxLength={1000}
+                  placeholder="What did you order? How was the service?"
+                  value={reviewBody}
+                  onChange={(e) => {
+                    setReviewBody(e.target.value);
+                    setReviewError(null);
+                    setReviewSuccess(false);
+                  }}
+                />
+
+                {reviewError && (
+                  <div className="notice is-error" role="alert">
+                    <AlertTriangle size={16} />
+                    <span>{reviewError}</span>
+                  </div>
+                )}
+                {reviewSuccess && (
+                  <div className="notice is-success" role="status">
+                    <CheckCircle2 size={16} />
+                    <span>Thanks — your review is live.</span>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={reviewSubmitting}
+                  onClick={submitReview}
+                >
+                  {reviewSubmitting ? 'Posting…' : user ? 'Post review' : 'Sign in to review'}
+                  {!reviewSubmitting && <Star size={15} />}
+                </button>
+              </section>
+
               {reviews.length === 0 ? (
                 <div className="empty-state">
                   <span className="empty-icon">

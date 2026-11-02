@@ -69,3 +69,11 @@ CREATE TABLE reviews (
     body          TEXT    NOT NULL,
     created_at    TEXT    NOT NULL
 );
+
+CREATE TABLE photos (
+    id            INTEGER PRIMARY KEY,
+    restaurant_id INTEGER NOT NULL REFERENCES restaurants(id),
+    kind          TEXT    NOT NULL,
+    label         TEXT    NOT NULL,
+    path          TEXT    NOT NULL
+);

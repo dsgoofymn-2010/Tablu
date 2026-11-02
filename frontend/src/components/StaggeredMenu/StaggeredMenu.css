@@ -88,13 +88,11 @@
   letter-spacing: 0.01em;
   line-height: 1;
   overflow: visible;
-  box-shadow: 0 6px 20px rgba(30, 20, 12, 0.18);
   transition: all 0.2s ease;
 }
 
 .sm-toggle:hover {
   background: #2e241d;
-  box-shadow: 0 10px 26px rgba(30, 20, 12, 0.24);
   transform: translateY(-1px);
 }
 
@@ -156,7 +154,7 @@
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-left: 1px solid var(--border, #e7dccb);
-  box-shadow: -20px 0 60px rgba(40, 26, 14, 0.18);
+  box-shadow: -8px 0 24px rgba(40, 26, 14, 0.07);
   display: flex;
   flex-direction: column;
   padding: 6.5rem 2.5rem 2.5rem 2.5rem;
@@ -169,7 +167,7 @@
 [data-position='left'] .staggered-menu-panel {
   right: auto;
   left: 0;
-  box-shadow: 20px 0 60px rgba(40, 26, 14, 0.18);
+  box-shadow: 8px 0 24px rgba(40, 26, 14, 0.07);
   border-left: 0;
   border-right: 1px solid var(--border, #e7dccb);
 }
@@ -290,10 +288,8 @@
 
 .sm-socials-title {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
   color: var(--muted, #736658);
 }
 
