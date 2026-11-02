@@ -30,6 +30,28 @@
   z-index: 1001;
 }
 
+.staggered-menu-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(251, 244, 234, 0.92);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  border-bottom: 1px solid var(--border, #e7dccb);
+  box-shadow: none;
+  transition: box-shadow 0.25s ease;
+  pointer-events: none;
+}
+
+.staggered-menu-header.is-scrolled::before {
+  box-shadow: 0 6px 20px rgba(60, 38, 16, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .staggered-menu-header::before { transition: none; }
+}
+
 .staggered-menu-header > * {
   pointer-events: auto;
 }

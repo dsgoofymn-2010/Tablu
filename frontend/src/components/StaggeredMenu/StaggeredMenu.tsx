@@ -34,6 +34,7 @@ export interface StaggeredMenuProps {
   onMenuClose?: () => void;
   isFixed?: boolean;
   headerChildren?: React.ReactNode;
+  headerClassName?: string;
   panelHeader?: React.ReactNode;
 }
 
@@ -56,6 +57,7 @@ export const StaggeredMenu: React.FC<StaggeredMenuProps> = ({
   onMenuOpen,
   onMenuClose,
   headerChildren,
+  headerClassName,
   panelHeader
 }) => {
   const [open, setOpen] = useState(false);
@@ -361,7 +363,10 @@ export const StaggeredMenu: React.FC<StaggeredMenuProps> = ({
           return raw.map((c, i) => <div key={i} className="sm-prelayer" style={{ background: c }} />);
         })()}
       </div>
-      <header className="staggered-menu-header" aria-label="Main navigation header">
+      <header
+        className={`staggered-menu-header${headerClassName ? ' ' + headerClassName : ''}`}
+        aria-label="Main navigation header"
+      >
         <div className="sm-logo" aria-label="Logo" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
           {logoElement ? (
             logoElement

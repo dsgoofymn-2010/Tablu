@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import StaggeredMenu from './StaggeredMenu/StaggeredMenu';
@@ -19,6 +19,14 @@ const headerNavVars = {
 export const Navigation: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const menuItems: StaggeredMenuItem[] = [
     { label: 'Restaurants', link: '/' },
@@ -56,8 +64,6 @@ export const Navigation: React.FC = () => {
     navItems.push({ label: 'Admin', to: '/admin' });
   }
 
-  const initials = user ? user.username.slice(0, 2).toUpperCase() : '';
-
   const headerRight = (
     <div className="header-right">
       <RouteNav
@@ -71,28 +77,10 @@ export const Navigation: React.FC = () => {
         colors={['#b5431f', '#1a1410']}
         style={headerNavVars}
       />
-
-      {user ? (
-        <button
-          type="button"
-          className="user-chip"
-          onClick={() => navigate(user.is_admin ? '/admin' : '/bookings')}
-          title={user.is_admin ? 'Admin account' : 'View your bookings'}
-        >
-          <span className={`avatar${user.is_admin ? ' is-admin' : ''}`}>
-            {user.is_admin ? <ShieldCheck size={13} /> : initials}
-          </span>
-          <span>{user.username}</span>
-          {user.is_admin ? <span className="badge-admin">ADMIN</span> : null}
-        </button>
-      ) : (
-        <button type="button" className="btn-signin" onClick={() => navigate('/login')}>
-          <LogIn size={14} />
-          <span>Sign in</span>
-        </button>
-      )}
     </div>
   );
+
+  const initials = user ? user.username.slice(0, 2).toUpperCase() : '';
 
   const panelHeader = user ? (
     <div
@@ -150,7 +138,48 @@ export const Navigation: React.FC = () => {
         <LogOut size={16} />
       </button>
     </div>
-  ) : null;
+  ) : (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
+        background: 'var(--surface-2)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-control)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            background: 'var(--accent-soft)',
+            color: 'var(--accent-ink)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <LogIn size={16} />
+        </div>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--ink)' }}>Not signed in</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--muted)' }}>Sign in to book tables</div>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="btn-signin"
+        onClick={() => navigate('/login')}
+        style={{ height: 34, padding: '0 14px', fontSize: 12 }}
+      >
+        Sign in
+      </button>
+    </div>
+  );
 
   return (
     <StaggeredMenu
@@ -173,6 +202,7 @@ export const Navigation: React.FC = () => {
         </div>
       }
       headerChildren={headerRight}
+      headerClassName={scrolled ? 'is-scrolled' : undefined}
       panelHeader={panelHeader}
     />
   );

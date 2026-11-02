@@ -12,6 +12,13 @@ import {
   Armchair,
   UtensilsCrossed,
   Sparkles,
+  Star,
+  MapPin,
+  Navigation,
+  Share2,
+  Copy,
+  Phone,
+  ArrowRight,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -29,17 +36,38 @@ interface Floor {
   name: string;
 }
 
+interface Review {
+  id: number;
+  author_name: string;
+  rating: number;
+  body: string;
+  created_at: string;
+}
+
+interface RestaurantProfile {
+  id: number;
+  name: string;
+  category: string;
+  latitude: number;
+  longitude: number;
+  image?: string | null;
+  cuisines: string[];
+  area: string;
+  phone: string;
+  cost_for_two: number | null;
+  opens_at: string;
+  closes_at: string;
+  rating: number | null;
+  rating_count: number | null;
+  known_for: string[];
+  amenities: string[];
+}
+
 interface RestaurantData {
-  restaurant: {
-    id: number;
-    name: string;
-    category: string;
-    latitude: number;
-    longitude: number;
-    image?: string;
-  };
+  restaurant: RestaurantProfile;
   floors: Floor[];
   seats: Seat[];
+  reviews: Review[];
 }
 
 interface SeatStatusResponse {
@@ -56,6 +84,28 @@ interface SeatStatusPayload {
 }
 
 const SLOTS = ['12:00', '13:00', '14:00', '18:00', '19:00', '20:00', '21:00'];
+
+const TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'photos', label: 'Photos' },
+  { id: 'reviews', label: 'Reviews' },
+  { id: 'book', label: 'Book a Table' },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
+
+const PHOTOS = [
+  { id: 1, kind: 'ambience', label: 'Dining hall', tone: 0 },
+  { id: 2, kind: 'food', label: 'Signature spread', tone: 2 },
+  { id: 3, kind: 'ambience', label: 'Rooftop', tone: 1 },
+  { id: 4, kind: 'food', label: 'From the grill', tone: 3 },
+  { id: 5, kind: 'ambience', label: 'Bar corner', tone: 1 },
+  { id: 6, kind: 'food', label: 'House classics', tone: 2 },
+  { id: 7, kind: 'ambience', label: 'Private seating', tone: 0 },
+  { id: 8, kind: 'food', label: 'Desserts', tone: 3 },
+] as const;
+
+type PhotoFilter = 'all' | 'food' | 'ambience';
 
 const toLocalISO = (d: Date) => {
   const y = d.getFullYear();
@@ -84,6 +134,13 @@ const slotLabel = (slot: string) => {
   return `${hour}:${`${m}`.padStart(2, '0')} ${suffix}`;
 };
 
+const compactTime = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  const suffix = h >= 12 ? 'pm' : 'am';
+  const hour = h % 12 === 0 ? 12 : h % 12;
+  return m === 0 ? `${hour} ${suffix}` : `${hour}:${`${m}`.padStart(2, '0')} ${suffix}`;
+};
+
 const friendlyDate = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number);
   const date = new Date(y, m - 1, d);
@@ -93,6 +150,62 @@ const friendlyDate = (iso: string) => {
     month: 'short',
   });
 };
+
+const minutesOf = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+};
+
+const istMinutesNow = () => {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+  return (hour % 24) * 60 + minute;
+};
+
+const isOpenNow = (opensAt: string, closesAt: string) => {
+  if (!opensAt || !closesAt) return false;
+  const cur = istMinutesNow();
+  const open = minutesOf(opensAt);
+  const close = minutesOf(closesAt);
+  return close > open ? cur >= open && cur < close : cur >= open || cur < close;
+};
+
+const clockLabel = (t: string) => {
+  const [hRaw, m] = t.split(':').map(Number);
+  const suffix = hRaw >= 12 ? 'pm' : 'am';
+  const h = hRaw % 12 === 0 ? 12 : hRaw % 12;
+  return m === 0 ? `${h} ${suffix}` : `${h}:${String(m).padStart(2, '0')} ${suffix}`;
+};
+
+const relTime = (iso: string) => {
+  const then = new Date(iso.replace(' ', 'T')).getTime();
+  if (Number.isNaN(then)) return '';
+  const mins = Math.max(Math.floor((Date.now() - then) / 60000), 1);
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days} days ago`;
+  return new Date(iso.replace(' ', 'T')).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+  });
+};
+
+const StarRow = ({ n }: { n: number }) => (
+  <span className="stars" aria-label={`${n} out of 5 stars`}>
+    {[0, 1, 2, 3, 4].map((i) => (
+      <Star key={i} size={12} fill={i < n ? 'currentColor' : 'none'} />
+    ))}
+  </span>
+);
 
 export const RestaurantDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -104,23 +217,25 @@ export const RestaurantDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Booking filters
   const days = useMemo(buildDays, []);
   const [date, setDate] = useState(days[0].iso);
   const [slot, setSlot] = useState('19:00');
+  const [guests, setGuests] = useState(2);
 
-  // Seats status
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [photoFilter, setPhotoFilter] = useState<PhotoFilter>('all');
+  const [copied, setCopied] = useState<'link' | 'address' | null>(null);
+  const tabsRef = useRef<HTMLElement | null>(null);
+
   const [seatStatuses, setSeatStatuses] = useState<SeatStatusResponse>({ booked: [], held: [] });
   const [selectedSeatIds, setSelectedSeatIds] = useState<number[]>([]);
   const [bookingInProgress, setBookingInProgress] = useState(false);
   const [notice, setNotice] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
-  // Hold timer
   const [holdExpiresAt, setHoldExpiresAt] = useState<number | null>(null);
   const [timerText, setTimerText] = useState<string>('');
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Fetch restaurant basic info & seats
   useEffect(() => {
     const fetchInfo = async () => {
       setLoading(true);
@@ -141,14 +256,12 @@ export const RestaurantDetailPage: React.FC = () => {
     fetchInfo();
   }, [id]);
 
-  // Fetch seat status whenever date or slot changes
   const loadSeatStatuses = async () => {
     if (!id || !date || !slot) return;
     try {
       const res = await fetch(`/api/restaurants/${id}/seats?date=${date}&slot=${slot}`);
       if (res.ok) {
         const data: SeatStatusPayload = await res.json();
-        // The API groups seats by floor and reports a status per table.
         const booked: number[] = [];
         const held: number[] = [];
         (data.floors ?? []).forEach((floor) => {
@@ -178,7 +291,6 @@ export const RestaurantDetailPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, date, slot]);
 
-  // Hold countdown handler
   useEffect(() => {
     if (!holdExpiresAt) {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
@@ -207,9 +319,8 @@ export const RestaurantDetailPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdExpiresAt]);
 
-  // Sync hold with server
   const syncHoldWithServer = async (seatIds: number[]) => {
-    if (!user) return; // Unauthenticated users don't hold on the server until login
+    if (!user) return;
     try {
       const res = await fetch('/api/holds', {
         method: 'POST',
@@ -296,6 +407,23 @@ export const RestaurantDetailPage: React.FC = () => {
     }
   };
 
+  const jumpToTab = (tab: TabId) => {
+    setActiveTab(tab);
+    requestAnimationFrame(() =>
+      tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    );
+  };
+
+  const copyText = async (text: string, which: 'link' | 'address') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      // clipboard unavailable — silently ignore
+    }
+  };
+
   if (loading) {
     return (
       <div className="canvas booking-page">
@@ -323,7 +451,7 @@ export const RestaurantDetailPage: React.FC = () => {
     );
   }
 
-  const { restaurant, floors, seats } = restaurantData;
+  const { restaurant, floors, seats, reviews } = restaurantData;
   const currentFloor = floors.find((f) => f.id === activeFloorId);
   const floorSeats = seats.filter((s) => s.floor_id === activeFloorId);
 
@@ -333,248 +461,605 @@ export const RestaurantDetailPage: React.FC = () => {
   const maxCol = floorSeats.length > 0 ? Math.max(...floorSeats.map((s) => s.col)) : 5;
   const gridCols = Math.max(maxCol, 4);
 
+  const open = isOpenNow(restaurant.opens_at, restaurant.closes_at);
+  const hoursLabel =
+    restaurant.opens_at && restaurant.closes_at
+      ? `${compactTime(restaurant.opens_at)} – ${compactTime(restaurant.closes_at)}`
+      : '';
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${restaurant.latitude},${restaurant.longitude}`;
+  const telHref = restaurant.phone ? `tel:${restaurant.phone.replace(/\s+/g, '')}` : '';
+  const filteredPhotos = PHOTOS.filter((p) => photoFilter === 'all' || p.kind === photoFilter);
+
   return (
     <div className="canvas booking-page">
       <Link to="/" className="back-link">
         <ChevronLeft size={15} /> All restaurants
       </Link>
 
-      {/* Header */}
       <header className="venue-header">
-        <div>
-          <p className="eyebrow">{restaurant.category} · Chennai</p>
-          <h1>{restaurant.name}</h1>
-          <p className="venue-meta">
-            <Armchair size={14} /> {seats.length} tables
-            <span className="dot">•</span>
-            <UtensilsCrossed size={14} /> {floors.length} {floors.length === 1 ? 'floor' : 'floors'}
-            <span className="dot">•</span>
-            <Clock size={14} /> Lunch & dinner service
+        <div className="venue-header-main">
+          <p className="eyebrow">
+            {(restaurant.cuisines.length ? restaurant.cuisines : [restaurant.category]).join(' · ')}
           </p>
-        </div>
-        <span className="live-badge">Live availability</span>
-      </header>
-
-      {/* Date + time */}
-      <section className="booking-steps" aria-label="Choose date and time">
-        <div className="step">
-          <span className="step-n">1</span>
-          <div className="step-body">
-            <span className="step-label">Choose a date</span>
-            <div className="day-strip">
-              {days.map((d) => (
-                <button
-                  key={d.iso}
-                  type="button"
-                  className={`day-chip${date === d.iso ? ' is-active' : ''}`}
-                  onClick={() => setDate(d.iso)}
-                  aria-pressed={date === d.iso}
-                >
-                  <span className="dow">{d.dow}</span>
-                  <span className="dnum">{d.day}</span>
-                  <span className="dmon">{d.mon}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="step">
-          <span className="step-n">2</span>
-          <div className="step-body">
-            <span className="step-label">Choose a time</span>
-            <div className="slot-strip">
-              {SLOTS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  className={`slot-chip${slot === s ? ' is-active' : ''}`}
-                  onClick={() => setSlot(s)}
-                  aria-pressed={slot === s}
-                >
-                  {slotLabel(s)}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {notice && (
-        <div className={`notice ${notice.type === 'error' ? 'is-error' : 'is-success'}`} style={{ marginBottom: 20 }}>
-          {notice.type === 'error' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
-          <span>{notice.text}</span>
-        </div>
-      )}
-
-      <div className="booking-layout">
-        {/* Floor plan */}
-        <section className="panel seat-panel" aria-label="Table availability">
-          <div className="panel-head">
-            <div className="legend">
-              <span className="legend-item">
-                <span className="swatch seat free" /> Available
-              </span>
-              <span className="legend-item">
-                <span className="swatch seat selected" /> Selected
-              </span>
-              <span className="legend-item">
-                <span className="swatch seat booked" /> Booked
-              </span>
-              <span className="legend-item">
-                <span className="swatch seat held" /> On hold
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {timerText && (
-                <span className="hold-timer">
-                  <Timer size={12} /> {timerText}
+          <div className="venue-title-row">
+            <h1>{restaurant.name}</h1>
+            {restaurant.rating !== null && (
+              <div className="rating-block">
+                <span className="rating-chip">
+                  <Star size={12} fill="currentColor" /> {restaurant.rating.toFixed(1)}
                 </span>
-              )}
-              <span className="count">
-                {selectedSeatIds.length} {selectedSeatIds.length === 1 ? 'table' : 'tables'} selected
-              </span>
-            </div>
-          </div>
-
-          <div className="floor-tabs" role="tablist" aria-label="Floors">
-            {floors.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                role="tab"
-                className="floor-tab"
-                aria-selected={activeFloorId === f.id}
-                onClick={() => {
-                  setActiveFloorId(f.id);
-                  setNotice(null);
-                }}
-              >
-                {f.name} floor
-              </button>
-            ))}
-          </div>
-
-          {floorSeats.length === 0 ? (
-            <div className="seat-grid-empty">
-              <strong>Nothing on this floor yet</strong>
-              No tables have been set up for {currentFloor?.name || 'this floor'}.
-            </div>
-          ) : (
-            <div
-              className="seat-grid"
-              style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}
-            >
-              {floorSeats.map((seat) => {
-                const isSelected = selectedSeatIds.includes(seat.id);
-                const isBooked = seatStatuses.booked?.includes(seat.id);
-                const isHeld = seatStatuses.held?.includes(seat.id);
-
-                let statusClass = 'free';
-                if (isSelected) statusClass = 'selected';
-                else if (isBooked) statusClass = 'booked';
-                else if (isHeld) statusClass = 'held';
-
-                const isDisabled = isBooked || isHeld;
-
-                return (
-                  <button
-                    key={seat.id}
-                    type="button"
-                    className={`seat ${statusClass}`}
-                    style={{ gridRow: seat.row, gridColumn: seat.col }}
-                    disabled={isDisabled}
-                    onClick={() => handleSeatClick(seat)}
-                    aria-pressed={isSelected}
-                    title={`Table ${seat.label} · ${seat.capacity} seats · ${statusClass}`}
-                  >
-                    <span className="seat-label">{seat.label}</span>
-                    <span className="seat-cap">{seat.capacity} seats</span>
-                    <span className="seat-pips" aria-hidden="true">
-                      {Array.from({ length: Math.min(seat.capacity, 6) }).map((_, i) => (
-                        <i key={i} />
-                      ))}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* Summary */}
-        <aside className="summary" aria-label="Reservation summary">
-          <div className="summary-head">
-            <p className="eyebrow">Step 3</p>
-            <h2>Your reservation</h2>
-            <p>
-              {restaurant.name} · {currentFloor?.name || 'Ground'} floor
-            </p>
-          </div>
-
-          <div className="summary-body">
-            <div className="summary-row">
-              <span>Date</span>
-              <strong>{friendlyDate(date)}</strong>
-            </div>
-            <div className="summary-row">
-              <span>Time</span>
-              <strong>{slotLabel(slot)}</strong>
-            </div>
-            <div className="summary-row">
-              <span>Tables</span>
-              {selectedSeats.length ? (
-                <span className="summary-tables">
-                  {selectedSeats.map((s) => (
-                    <span className="table-pill" key={s.id}>
-                      {s.label}
-                    </span>
-                  ))}
-                </span>
-              ) : (
-                <strong style={{ color: 'var(--muted-2)', fontWeight: 600 }}>—</strong>
-              )}
-            </div>
-
-            {selectedSeats.length ? (
-              <>
-                <div className="summary-total">
-                  <span>Party size</span>
-                  <strong>
-                    {totalCapacity} <small>{totalCapacity === 1 ? 'guest' : 'guests'}</small>
-                  </strong>
-                </div>
-
-                <button
-                  type="button"
-                  className="btn-primary"
-                  disabled={bookingInProgress}
-                  onClick={handleBook}
-                >
-                  {bookingInProgress ? 'Reserving…' : user ? 'Confirm reservation' : 'Sign in to reserve'}
-                  {!bookingInProgress && <Sparkles size={15} />}
-                </button>
-
-                <p className="summary-note">
-                  Your table is held for a few minutes while you finish. Cancel free from My bookings.
-                </p>
-              </>
-            ) : (
-              <div className="summary-empty">
-                <CalendarDays size={22} />
-                <div>
-                  Pick a table on the floor plan to see your party size and confirm the booking.
+                <div className="rating-meta">
+                  <strong>{(restaurant.rating_count ?? 0).toLocaleString('en-IN')}</strong>
+                  <span>Dining ratings</span>
                 </div>
               </div>
             )}
           </div>
-        </aside>
+          {restaurant.area && (
+            <p className="venue-area">
+              <MapPin size={13} /> {restaurant.area}
+            </p>
+          )}
+
+          <div className="venue-facts">
+            {hoursLabel && (
+              <span className={`status-pill${open ? ' is-open' : ' is-closed'}`}>
+                {open ? `Open · closes ${clockLabel(restaurant.closes_at!)}` : `Closed · opens ${clockLabel(restaurant.opens_at!)}`}
+              </span>
+            )}
+            {restaurant.cost_for_two && (
+              <span className="venue-fact">₹{restaurant.cost_for_two.toLocaleString('en-IN')} for two</span>
+            )}
+            {restaurant.phone && (
+              <a className="venue-fact venue-phone" href={telHref}>
+                <Phone size={13} /> {restaurant.phone}
+              </a>
+            )}
+          </div>
+
+          <div className="action-pills">
+            <a className="action-pill" href={mapsUrl} target="_blank" rel="noreferrer">
+              <Navigation size={14} /> Direction
+            </a>
+            <button
+              type="button"
+              className="action-pill"
+              onClick={() => copyText(window.location.href, 'link')}
+            >
+              <Share2 size={14} /> Share
+            </button>
+            <button type="button" className="action-pill" onClick={() => jumpToTab('reviews')}>
+              <Star size={14} /> Reviews
+            </button>
+            <button type="button" className="action-pill is-primary" onClick={() => jumpToTab('book')}>
+              <CalendarDays size={14} /> Book a table
+            </button>
+            {copied && (
+              <span className="copied-chip">{copied === 'link' ? 'Link copied' : 'Address copied'}</span>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="gallery-strip" aria-label="Photo previews">
+        <button
+          type="button"
+          className={`gallery-tile is-hero gallery-tone-${PHOTOS[0].tone}`}
+          onClick={() => jumpToTab('photos')}
+        >
+          <Armchair size={44} strokeWidth={1.2} />
+          <span className="tile-label">{PHOTOS[0].label}</span>
+          <span className="gallery-overlay">
+            <span className="gallery-pill">
+              View all photos <ArrowRight size={13} />
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`gallery-tile gallery-tone-${PHOTOS[1].tone}`}
+          onClick={() => jumpToTab('photos')}
+        >
+          <UtensilsCrossed size={30} strokeWidth={1.2} />
+          <span className="tile-label">{PHOTOS[1].label}</span>
+        </button>
+        <button
+          type="button"
+          className={`gallery-tile gallery-tone-${PHOTOS[2].tone}`}
+          onClick={() => jumpToTab('photos')}
+        >
+          <MapPin size={30} strokeWidth={1.2} />
+          <span className="tile-label">{PHOTOS[2].label}</span>
+        </button>
       </div>
 
-      <p className="summary-note" style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 22 }}>
-        <Users size={13} /> Tables are sized for 2–6 guests. Larger group? Combine two adjacent tables.
-      </p>
+      <nav className="detail-tabs" role="tablist" aria-label="Restaurant sections" ref={tabsRef}>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            className={`detail-tab${activeTab === t.id ? ' is-active' : ''}`}
+            aria-selected={activeTab === t.id}
+            onClick={() => setActiveTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className={`detail-layout${activeTab === 'book' ? ' is-book' : ''}`}>
+        <main className="detail-main">
+          {activeTab === 'overview' && (
+            <div className="detail-pane">
+              {restaurant.known_for.length > 0 && (
+                <section className="info-card">
+                  <h3>Known for</h3>
+                  <p className="info-sub">What regulars order again and again</p>
+                  <div className="chip-row">
+                    {restaurant.known_for.map((k) => (
+                      <span key={k} className="soft-chip is-accent">
+                        {k}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section className="info-card">
+                <h3>Average cost</h3>
+                <p className="cost-line">
+                  {restaurant.cost_for_two
+                    ? `₹${restaurant.cost_for_two.toLocaleString('en-IN')} for two people (approx.)`
+                    : 'Cost details coming soon'}
+                </p>
+                <p className="info-fine">Exclusive of applicable taxes and charges, if any</p>
+                <p className="info-fine">Cash and cards accepted · Digital payments accepted</p>
+              </section>
+
+              {restaurant.cuisines.length > 0 && (
+                <section className="info-card">
+                  <h3>Cuisines</h3>
+                  <div className="chip-row">
+                    {restaurant.cuisines.map((c) => (
+                      <span key={c} className="soft-chip">
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {restaurant.amenities.length > 0 && (
+                <section className="info-card">
+                  <h3>More info</h3>
+                  <div className="amenity-grid">
+                    {restaurant.amenities.map((a) => (
+                      <span key={a} className="amenity-item">
+                        <CheckCircle2 size={15} /> {a}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section className="info-card">
+                <h3>Good to know</h3>
+                <div className="amenity-grid">
+                  <span className="amenity-item">
+                    <Armchair size={15} /> {seats.length} tables across {floors.length}{' '}
+                    {floors.length === 1 ? 'floor' : 'floors'}
+                  </span>
+                  <span className="amenity-item">
+                    <Clock size={15} /> {hoursLabel || 'Hours coming soon'}
+                  </span>
+                  <span className="amenity-item">
+                    <Users size={15} /> Tables seat 2–6 guests
+                  </span>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'photos' && (
+            <div className="detail-pane">
+              <div className="photo-filters" role="tablist" aria-label="Photo filters">
+                {(['all', 'food', 'ambience'] as const).map((f) => {
+                  const count = f === 'all' ? PHOTOS.length : PHOTOS.filter((p) => p.kind === f).length;
+                  return (
+                    <button
+                      key={f}
+                      type="button"
+                      className={`photo-chip${photoFilter === f ? ' is-active' : ''}`}
+                      onClick={() => setPhotoFilter(f)}
+                      aria-pressed={photoFilter === f}
+                    >
+                      {f === 'all' ? 'All' : f === 'food' ? 'Food' : 'Ambience'} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="photo-grid">
+                {filteredPhotos.map((p) => (
+                  <div key={p.id} className={`photo-tile gallery-tone-${p.tone}`}>
+                    {p.kind === 'food' ? (
+                      <UtensilsCrossed size={26} strokeWidth={1.2} />
+                    ) : (
+                      <Armchair size={26} strokeWidth={1.2} />
+                    )}
+                    <span className="tile-label">{p.label}</span>
+                    <span className="coming-chip">Coming soon</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'reviews' && (
+            <div className="detail-pane">
+              {reviews.length === 0 ? (
+                <div className="empty-state">
+                  <span className="empty-icon">
+                    <Star size={24} />
+                  </span>
+                  <h3>No reviews yet</h3>
+                  <p>Be the first to share how your visit went after you dine here.</p>
+                </div>
+              ) : (
+                reviews.map((r) => (
+                  <article key={r.id} className="review-card">
+                    <div className="review-head">
+                      <div className="review-user">
+                        <span className="avatar">{r.author_name.charAt(0).toUpperCase()}</span>
+                        <div>
+                          <strong>{r.author_name}</strong>
+                          <div className="review-sub">
+                            <StarRow n={r.rating} />
+                            <span className="review-time">{relTime(r.created_at)}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <span className="dining-tag">Dining</span>
+                    </div>
+                    <p className="review-body">{r.body}</p>
+                  </article>
+                ))
+              )}
+            </div>
+          )}
+
+          {activeTab === 'book' && (
+            <div className="detail-pane">
+              <div className="book-head">
+                <span className="live-badge">Live availability</span>
+              </div>
+
+              <section className="booking-steps" aria-label="Choose date and time">
+                <div className="step">
+                  <span className="step-n">1</span>
+                  <div className="step-body">
+                    <span className="step-label">Choose a date</span>
+                    <div className="day-strip">
+                      {days.map((d) => (
+                        <button
+                          key={d.iso}
+                          type="button"
+                          className={`day-chip${date === d.iso ? ' is-active' : ''}`}
+                          onClick={() => setDate(d.iso)}
+                          aria-pressed={date === d.iso}
+                        >
+                          <span className="dow">{d.dow}</span>
+                          <span className="dnum">{d.day}</span>
+                          <span className="dmon">{d.mon}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="step">
+                  <span className="step-n">2</span>
+                  <div className="step-body">
+                    <span className="step-label">Choose a time</span>
+                    <div className="slot-strip">
+                      {SLOTS.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          className={`slot-chip${slot === s ? ' is-active' : ''}`}
+                          onClick={() => setSlot(s)}
+                          aria-pressed={slot === s}
+                        >
+                          {slotLabel(s)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {notice && (
+                <div
+                  className={`notice ${notice.type === 'error' ? 'is-error' : 'is-success'}`}
+                  style={{ marginBottom: 20 }}
+                >
+                  {notice.type === 'error' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+                  <span>{notice.text}</span>
+                </div>
+              )}
+
+              <div className="booking-layout">
+                <section className="panel seat-panel" aria-label="Table availability">
+                  <div className="panel-head">
+                    <div className="legend">
+                      <span className="legend-item">
+                        <span className="swatch seat free" /> Available
+                      </span>
+                      <span className="legend-item">
+                        <span className="swatch seat selected" /> Selected
+                      </span>
+                      <span className="legend-item">
+                        <span className="swatch seat booked" /> Booked
+                      </span>
+                      <span className="legend-item">
+                        <span className="swatch seat held" /> On hold
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {timerText && (
+                        <span className="hold-timer">
+                          <Timer size={12} /> {timerText}
+                        </span>
+                      )}
+                      <span className="count">
+                        {selectedSeatIds.length} {selectedSeatIds.length === 1 ? 'table' : 'tables'} selected
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="floor-tabs" role="tablist" aria-label="Floors">
+                    {floors.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        role="tab"
+                        className="floor-tab"
+                        aria-selected={activeFloorId === f.id}
+                        onClick={() => {
+                          setActiveFloorId(f.id);
+                          setNotice(null);
+                        }}
+                      >
+                        {f.name} floor
+                      </button>
+                    ))}
+                  </div>
+
+                  {floorSeats.length === 0 ? (
+                    <div className="seat-grid-empty">
+                      <strong>Nothing on this floor yet</strong>
+                      No tables have been set up for {currentFloor?.name || 'this floor'}.
+                    </div>
+                  ) : (
+                    <div
+                      className="seat-grid"
+                      style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}
+                    >
+                      {floorSeats.map((seat) => {
+                        const isSelected = selectedSeatIds.includes(seat.id);
+                        const isBooked = seatStatuses.booked?.includes(seat.id);
+                        const isHeld = seatStatuses.held?.includes(seat.id);
+
+                        let statusClass = 'free';
+                        if (isSelected) statusClass = 'selected';
+                        else if (isBooked) statusClass = 'booked';
+                        else if (isHeld) statusClass = 'held';
+
+                        const isDisabled = isBooked || isHeld;
+
+                        return (
+                          <button
+                            key={seat.id}
+                            type="button"
+                            className={`seat ${statusClass}`}
+                            style={{ gridRow: seat.row, gridColumn: seat.col }}
+                            disabled={isDisabled}
+                            onClick={() => handleSeatClick(seat)}
+                            aria-pressed={isSelected}
+                            title={`Table ${seat.label} · ${seat.capacity} seats · ${statusClass}`}
+                          >
+                            <span className="seat-label">{seat.label}</span>
+                            <span className="seat-cap">{seat.capacity} seats</span>
+                            <span className="seat-pips" aria-hidden="true">
+                              {Array.from({ length: Math.min(seat.capacity, 6) }).map((_, i) => (
+                                <i key={i} />
+                              ))}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+
+                <aside className="summary" aria-label="Reservation summary">
+                  <div className="summary-head">
+                    <p className="eyebrow">Step 3</p>
+                    <h2>Your reservation</h2>
+                    <p>
+                      {restaurant.name} · {currentFloor?.name || 'Ground'} floor
+                    </p>
+                  </div>
+
+                  <div className="summary-body">
+                    <div className="summary-row">
+                      <span>Date</span>
+                      <strong>{friendlyDate(date)}</strong>
+                    </div>
+                    <div className="summary-row">
+                      <span>Time</span>
+                      <strong>{slotLabel(slot)}</strong>
+                    </div>
+                    <div className="summary-row">
+                      <span>Tables</span>
+                      {selectedSeats.length ? (
+                        <span className="summary-tables">
+                          {selectedSeats.map((s) => (
+                            <span className="table-pill" key={s.id}>
+                              {s.label}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        <strong style={{ color: 'var(--muted-2)', fontWeight: 600 }}>—</strong>
+                      )}
+                    </div>
+
+                    {selectedSeats.length ? (
+                      <>
+                        <div className="summary-total">
+                          <span>Party size</span>
+                          <strong>
+                            {totalCapacity} <small>{totalCapacity === 1 ? 'guest' : 'guests'}</small>
+                          </strong>
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={bookingInProgress}
+                          onClick={handleBook}
+                        >
+                          {bookingInProgress ? 'Reserving…' : user ? 'Confirm reservation' : 'Sign in to reserve'}
+                          {!bookingInProgress && <Sparkles size={15} />}
+                        </button>
+
+                        <p className="summary-note">
+                          Your table is held for a few minutes while you finish. Cancel free from My bookings.
+                        </p>
+                      </>
+                    ) : (
+                      <div className="summary-empty">
+                        <CalendarDays size={22} />
+                        <div>Pick a table on the floor plan to see your party size and confirm the booking.</div>
+                      </div>
+                    )}
+                  </div>
+                </aside>
+              </div>
+
+              <p className="summary-note" style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 22 }}>
+                <Users size={13} /> Tables are sized for 2–6 guests. Larger group? Combine two adjacent tables.
+              </p>
+            </div>
+          )}
+        </main>
+
+        {activeTab !== 'book' && (
+          <aside className="detail-rail" aria-label="Quick reservation">
+            <div className="rail-card">
+              <p className="eyebrow">Table reservation</p>
+              <h2>Reserve your table</h2>
+
+              <div className="rail-field">
+                <span>Date</span>
+                <div className="chip-row" role="radiogroup" aria-label="Date">
+                  {days.map((d) => (
+                    <button
+                      key={d.iso}
+                      type="button"
+                      role="radio"
+                      aria-checked={date === d.iso}
+                      className={`pick-chip${date === d.iso ? ' is-active' : ''}`}
+                      onClick={() => setDate(d.iso)}
+                    >
+                      {d.dow === 'Today' ? 'Today' : friendlyDate(d.iso)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rail-field">
+                <span>Time</span>
+                <div className="chip-row" role="radiogroup" aria-label="Time">
+                  {SLOTS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      role="radio"
+                      aria-checked={slot === s}
+                      className={`pick-chip${slot === s ? ' is-active' : ''}`}
+                      onClick={() => setSlot(s)}
+                    >
+                      {slotLabel(s)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rail-field">
+                <span>Guests</span>
+                <div className="stepper">
+                  <button
+                    type="button"
+                    className="stepper-btn"
+                    aria-label="Fewer guests"
+                    disabled={guests <= 1}
+                    onClick={() => setGuests((g) => Math.max(1, g - 1))}
+                  >
+                    −
+                  </button>
+                  <span className="stepper-value" aria-live="polite">
+                    {guests} <small>{guests === 1 ? 'guest' : 'guests'}</small>
+                  </span>
+                  <button
+                    type="button"
+                    className="stepper-btn"
+                    aria-label="More guests"
+                    disabled={guests >= 10}
+                    onClick={() => setGuests((g) => Math.min(10, g + 1))}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <button type="button" className="btn-primary" onClick={() => jumpToTab('book')}>
+                Find a table <ArrowRight size={15} />
+              </button>
+              <p className="rail-note">
+                You’ll pick your exact tables on the live floor plan — sized {guests}{' '}
+                {guests === 1 ? 'guest' : 'guests'} or more.
+              </p>
+            </div>
+
+            <div className="rail-card">
+              <h3>Direction</h3>
+              <p className="rail-address">
+                <MapPin size={14} /> {restaurant.area || 'Chennai'}
+              </p>
+              <div className="rail-actions">
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => copyText(restaurant.area || restaurant.name, 'address')}
+                >
+                  <Copy size={14} /> Copy
+                </button>
+                <a className="btn-ghost" href={mapsUrl} target="_blank" rel="noreferrer">
+                  <Navigation size={14} /> Direction
+                </a>
+              </div>
+              {restaurant.phone && (
+                <a className="rail-phone" href={telHref}>
+                  <Phone size={13} /> {restaurant.phone}
+                </a>
+              )}
+            </div>
+          </aside>
+        )}
+      </div>
     </div>
   );
 };

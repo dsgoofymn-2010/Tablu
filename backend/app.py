@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory, session
 
 from db import get_connection
+from profiles import REVIEWS, profile_dict, profile_row
 from security import hash_password, needs_rehash, verify_password
 
 FRONTEND = Path(__file__).parent.parent / "frontend"
@@ -19,6 +20,71 @@ HOLD_SECONDS = 300
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)
+
+
+RESTAURANT_COLUMNS = [
+    ("cuisines", "TEXT"),
+    ("area", "TEXT"),
+    ("phone", "TEXT"),
+    ("cost_for_two", "INTEGER"),
+    ("opens_at", "TEXT"),
+    ("closes_at", "TEXT"),
+    ("rating", "REAL"),
+    ("rating_count", "INTEGER"),
+    ("known_for", "TEXT"),
+    ("amenities", "TEXT"),
+]
+
+PROFILE_SQL = (
+    "UPDATE restaurants SET cuisines = ?, area = ?, phone = ?, cost_for_two = ?, "
+    "opens_at = ?, closes_at = ?, rating = ?, rating_count = ?, known_for = ?, "
+    "amenities = ? WHERE id = ?"
+)
+
+REVIEWS_SQL = (
+    "INSERT INTO reviews (restaurant_id, author_name, rating, body, created_at) "
+    "VALUES (?, ?, ?, ?, ?)"
+)
+
+
+def migrate():
+    conn = get_connection()
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(bookings)")]
+    if "group_id" not in cols:
+        conn.execute("ALTER TABLE bookings ADD COLUMN group_id TEXT")
+
+    rcols = {row[1] for row in conn.execute("PRAGMA table_info(restaurants)")}
+    for col, decl in RESTAURANT_COLUMNS:
+        if col not in rcols:
+            conn.execute(f"ALTER TABLE restaurants ADD COLUMN {col} {decl}")
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS reviews ("
+        " id INTEGER PRIMARY KEY,"
+        " restaurant_id INTEGER NOT NULL REFERENCES restaurants(id),"
+        " author_name TEXT NOT NULL,"
+        " rating INTEGER NOT NULL,"
+        " body TEXT NOT NULL,"
+        " created_at TEXT NOT NULL)"
+    )
+
+    for row in conn.execute("SELECT id, name, cuisines FROM restaurants").fetchall():
+        if row["cuisines"]:
+            continue
+        values = profile_row(row["name"])
+        if values:
+            conn.execute(PROFILE_SQL, [*values, row["id"]])
+
+    if conn.execute("SELECT COUNT(*) AS n FROM reviews").fetchone()["n"] == 0:
+        for row in conn.execute("SELECT id, name FROM restaurants").fetchall():
+            for author, rating, body, created in REVIEWS.get(row["name"], []):
+                conn.execute(REVIEWS_SQL, (row["id"], author, rating, body, created))
+
+    conn.commit()
+    conn.close()
+
+
+migrate()
 
 
 def now_iso():
@@ -207,7 +273,9 @@ def list_restaurants():
 def restaurant_details(restaurant_id):
     conn = get_connection()
     restaurant = conn.execute(
-        "SELECT id, name, category, latitude, longitude, image FROM restaurants WHERE id = ?",
+        "SELECT id, name, category, latitude, longitude, image, cuisines, area, "
+        "phone, cost_for_two, opens_at, closes_at, rating, rating_count, "
+        "known_for, amenities FROM restaurants WHERE id = ?",
         (restaurant_id,),
     ).fetchone()
     if restaurant is None:
@@ -228,13 +296,20 @@ def restaurant_details(restaurant_id):
             f"WHERE floor_id IN ({placeholders}) ORDER BY id",
             floor_ids,
         ).fetchall()
+
+    reviews = conn.execute(
+        "SELECT id, author_name, rating, body, created_at FROM reviews "
+        "WHERE restaurant_id = ? ORDER BY created_at DESC",
+        (restaurant_id,),
+    ).fetchall()
     conn.close()
 
     return jsonify(
         {
-            "restaurant": dict(restaurant),
+            "restaurant": profile_dict(restaurant),
             "floors": [dict(f) for f in floors],
             "seats": [dict(s) for s in seats],
+            "reviews": [dict(r) for r in reviews],
         }
     )
 
@@ -370,11 +445,12 @@ def create_booking():
 
     try:
         created = []
+        group_id = secrets.token_hex(4)
         for seat_id in seat_ids:
             cur = conn.execute(
-                "INSERT INTO bookings (seat_id, date, time_slot, user_name) "
-                "VALUES (?, ?, ?, ?)",
-                (seat_id, date_str, slot, user["username"]),
+                "INSERT INTO bookings (seat_id, date, time_slot, user_name, group_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (seat_id, date_str, slot, user["username"], group_id),
             )
             created.append(
                 {"id": cur.lastrowid, "seat_id": seat_id, "date": date_str, "time_slot": slot}
@@ -390,7 +466,7 @@ def create_booking():
         conn.close()
         return jsonify({"error": "seat already taken"}), 409
     conn.close()
-    return jsonify({"bookings": created}), 201
+    return jsonify({"bookings": created, "group_id": group_id}), 201
 
 
 @app.post("/api/holds")
@@ -463,7 +539,7 @@ def list_bookings():
     conn = get_connection()
     rows = conn.execute(
         """
-        SELECT b.id, b.date, b.time_slot, b.user_name,
+        SELECT b.id, b.date, b.time_slot, b.user_name, b.group_id,
                s.label AS table_label, s.capacity,
                f.name AS floor_name,
                r.id AS restaurant_id, r.name AS restaurant_name
@@ -486,10 +562,23 @@ def cancel_booking(booking_id):
     if user is None:
         return jsonify({"error": "log in required"}), 401
     conn = get_connection()
-    cur = conn.execute(
-        "DELETE FROM bookings WHERE id = ? AND user_name = ?",
+    target = conn.execute(
+        "SELECT id, group_id FROM bookings WHERE id = ? AND user_name = ?",
         (booking_id, user["username"]),
-    )
+    ).fetchone()
+    if target is None:
+        conn.close()
+        return jsonify({"error": "booking not found"}), 404
+    if target["group_id"]:
+        cur = conn.execute(
+            "DELETE FROM bookings WHERE group_id = ? AND user_name = ?",
+            (target["group_id"], user["username"]),
+        )
+    else:
+        cur = conn.execute(
+            "DELETE FROM bookings WHERE id = ? AND user_name = ?",
+            (booking_id, user["username"]),
+        )
     conn.commit()
     conn.close()
     if cur.rowcount == 0:

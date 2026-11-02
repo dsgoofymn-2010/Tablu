@@ -23,6 +23,18 @@ interface Booking {
   capacity: number;
   date: string;
   time_slot: string;
+  group_id: string | null;
+}
+
+interface BookingGroup {
+  key: string;
+  id: number;
+  restaurant_name: string;
+  floors: string[];
+  tables: string[];
+  totalSeats: number;
+  date: string;
+  time_slot: string;
 }
 
 const toLocalISO = (d: Date) => {
@@ -50,6 +62,40 @@ const slotLabel = (slot: string) => {
   return `${hour}:${`${m}`.padStart(2, '0')} ${suffix}`;
 };
 
+const groupKeyOf = (b: Booking) => b.group_id ?? `solo-${b.id}`;
+
+const groupBookings = (list: Booking[]): BookingGroup[] => {
+  const map = new Map<string, Booking[]>();
+  for (const b of list) {
+    const key = groupKeyOf(b);
+    const rows = map.get(key);
+    if (rows) rows.push(b);
+    else map.set(key, [b]);
+  }
+  return Array.from(map.values()).map((rows) => {
+    const first = rows[0];
+    const sorted = rows
+      .slice()
+      .sort((a, b) => a.table_label.localeCompare(b.table_label, undefined, { numeric: true }));
+    return {
+      key: groupKeyOf(first),
+      id: first.id,
+      restaurant_name: first.restaurant_name,
+      floors: Array.from(new Set(rows.map((r) => r.floor_name))),
+      tables: sorted.map((r) => r.table_label),
+      totalSeats: rows.reduce((acc, r) => acc + r.capacity, 0),
+      date: first.date,
+      time_slot: first.time_slot,
+    };
+  });
+};
+
+const tablesLabel = (g: BookingGroup) =>
+  g.tables.length === 1 ? `Table ${g.tables[0]}` : `Tables ${g.tables.join(', ')}`;
+
+const floorsLabel = (g: BookingGroup) =>
+  g.floors.length === 1 ? `${g.floors[0]} floor` : `${g.floors.join(', ')} floors`;
+
 export const BookingsPage: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -58,11 +104,9 @@ export const BookingsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Custom cancellation modal state
-  const [bookingToCancel, setBookingToCancel] = useState<Booking | null>(null);
+  const [bookingToCancel, setBookingToCancel] = useState<BookingGroup | null>(null);
   const [isCanceling, setIsCanceling] = useState(false);
   const [cancelFeedback, setCancelFeedback] = useState<string | null>(null);
-  const [showAllPast, setShowAllPast] = useState(false);
 
   const fetchBookings = async () => {
     setLoading(true);
@@ -100,9 +144,11 @@ export const BookingsPage: React.FC = () => {
     try {
       const res = await fetch(`/api/bookings/${bookingToCancel.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Cancellation failed');
-      setBookings((prev) => prev.filter((b) => b.id !== bookingToCancel.id));
+      setBookings((prev) => prev.filter((b) => groupKeyOf(b) !== bookingToCancel.key));
       setCancelFeedback(
-        `Reservation at ${bookingToCancel.restaurant_name} (table ${bookingToCancel.table_label}) cancelled. The table is free for other diners.`
+        `Reservation at ${bookingToCancel.restaurant_name} (${tablesLabel(bookingToCancel).toLowerCase()}) cancelled. ${
+          bookingToCancel.tables.length === 1 ? 'The table is' : 'The tables are'
+        } free for other diners.`
       );
       setBookingToCancel(null);
     } catch {
@@ -123,38 +169,37 @@ export const BookingsPage: React.FC = () => {
 
   const today = toLocalISO(new Date());
   const upcoming = bookings.filter((b) => b.date >= today);
-  const past = bookings.filter((b) => b.date < today).reverse();
-  const visiblePast = showAllPast ? past : past.slice(0, 3);
+  const upcomingGroups = groupBookings(upcoming);
 
-  const renderTicket = (b: Booking, isPast = false) => {
-    const when = partsOf(b.date);
+  const renderTicket = (g: BookingGroup) => {
+    const when = partsOf(g.date);
     return (
-      <article key={b.id} className={`ticket${isPast ? ' is-past' : ''}`}>
+      <article key={g.key} className="ticket">
         <div>
           <div className="ticket-top">
             <span className="ticket-tag">
               <MapPin size={10} style={{ marginRight: 3 }} />
-              {b.floor_name}
+              {g.floors.join(', ')}
             </span>
-            <span className="ticket-id">#TBL-{String(b.id).padStart(4, '0')}</span>
+            <span className="ticket-id">#TBL-{String(g.id).padStart(4, '0')}</span>
           </div>
-          <h3>{b.restaurant_name}</h3>
+          <h3>{g.restaurant_name}</h3>
           <p className="ticket-meta">
-            <Armchair size={13} /> Table {b.table_label}
+            <Armchair size={13} /> {tablesLabel(g)}
             <span className="dot">•</span>
             <span>
-              {b.capacity} {b.capacity === 1 ? 'seat' : 'seats'}
+              {g.totalSeats} {g.totalSeats === 1 ? 'seat' : 'seats'}
             </span>
           </p>
         </div>
 
         <div className="ticket-when">
-          <span className="ticket-weekday">{isPast ? 'Past visit' : when.weekday}</span>
+          <span className="ticket-weekday">{when.weekday}</span>
           <span className="ticket-date">
             {when.day} {when.month}
           </span>
           <span className="ticket-time">
-            <Clock size={12} /> {slotLabel(b.time_slot)}
+            <Clock size={12} /> {slotLabel(g.time_slot)}
           </span>
         </div>
 
@@ -164,11 +209,11 @@ export const BookingsPage: React.FC = () => {
             className="btn-danger-ghost"
             onClick={() => {
               setCancelFeedback(null);
-              setBookingToCancel(b);
+              setBookingToCancel(g);
             }}
           >
             <XCircle size={14} />
-            {isPast ? 'Remove' : 'Cancel'}
+            Cancel
           </button>
         </div>
       </article>
@@ -184,9 +229,7 @@ export const BookingsPage: React.FC = () => {
           <p className="subline">
             {loading
               ? 'Checking your reservations…'
-              : `${upcoming.length} upcoming ${upcoming.length === 1 ? 'reservation' : 'reservations'}${
-                  past.length ? ` · ${past.length} past` : ''
-                }`}
+              : `${upcomingGroups.length} upcoming ${upcomingGroups.length === 1 ? 'reservation' : 'reservations'}`}
           </p>
         </div>
 
@@ -228,7 +271,7 @@ export const BookingsPage: React.FC = () => {
             <RefreshCw size={15} /> Try again
           </button>
         </div>
-      ) : bookings.length === 0 ? (
+      ) : upcomingGroups.length === 0 ? (
         <div className="empty-state">
           <span className="empty-icon">
             <Utensils size={24} />
@@ -243,37 +286,15 @@ export const BookingsPage: React.FC = () => {
           </Link>
         </div>
       ) : (
-        <>
-          {upcoming.length > 0 && (
-            <section aria-label="Upcoming reservations">
-              <div className="list-heading">
-                <span>Upcoming</span>
-                <span className="list-heading-count">{upcoming.length}</span>
-              </div>
-              <div className="ticket-list">{upcoming.map((b) => renderTicket(b))}</div>
-            </section>
-          )}
-
-          {past.length > 0 && (
-            <section aria-label="Past reservations" style={{ marginTop: 36 }}>
-              <div className="list-heading">
-                <span>Past visits</span>
-                <span className="list-heading-count">{past.length}</span>
-              </div>
-              <div className="ticket-list">{visiblePast.map((b) => renderTicket(b, true))}</div>
-              {past.length > visiblePast.length && (
-                <div className="past-more">
-                  <button type="button" className="btn-ghost" onClick={() => setShowAllPast(true)}>
-                    Show all {past.length} past visits
-                  </button>
-                </div>
-              )}
-            </section>
-          )}
-        </>
+        <section aria-label="Upcoming reservations">
+          <div className="list-heading">
+            <span>Upcoming</span>
+            <span className="list-heading-count">{upcomingGroups.length}</span>
+          </div>
+          <div className="ticket-list">{upcomingGroups.map((g) => renderTicket(g))}</div>
+        </section>
       )}
 
-      {/* Cancellation confirmation */}
       {bookingToCancel && (
         <div
           className="modal-overlay"
@@ -291,15 +312,16 @@ export const BookingsPage: React.FC = () => {
 
             <h2 id="cancel-title">Cancel this reservation?</h2>
             <p>
-              The table will be released immediately and other diners will be able to book it. This can’t be
-              undone.
+              {bookingToCancel.tables.length === 1 ? 'The table' : 'The tables'} will be released immediately
+              and other diners will be able to book {bookingToCancel.tables.length === 1 ? 'it' : 'them'}.
+              This can’t be undone.
             </p>
 
             <div className="modal-highlight">
               <strong>{bookingToCancel.restaurant_name}</strong>
               <div className="meta">
-                <MapPin size={12} /> {bookingToCancel.floor_name} floor • Table{' '}
-                {bookingToCancel.table_label} ({bookingToCancel.capacity} seats)
+                <MapPin size={12} /> {floorsLabel(bookingToCancel)} • {tablesLabel(bookingToCancel)} (
+                {bookingToCancel.totalSeats} seats)
               </div>
               <div className="when">
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -322,7 +344,7 @@ export const BookingsPage: React.FC = () => {
               </button>
               <button type="button" className="btn-danger" disabled={isCanceling} onClick={confirmCancel}>
                 <XCircle size={15} />
-                {isCanceling ? 'Cancelling…' : 'Cancel table'}
+                {isCanceling ? 'Cancelling…' : bookingToCancel.tables.length === 1 ? 'Cancel table' : 'Cancel tables'}
               </button>
             </div>
           </div>

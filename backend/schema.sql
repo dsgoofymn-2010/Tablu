@@ -1,12 +1,22 @@
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE restaurants (
-    id        INTEGER PRIMARY KEY,
-    name      TEXT    NOT NULL,
-    category  TEXT    NOT NULL DEFAULT 'non-veg',
-    latitude  REAL    NOT NULL,
-    longitude REAL    NOT NULL,
-    image     TEXT
+    id            INTEGER PRIMARY KEY,
+    name          TEXT    NOT NULL,
+    category      TEXT    NOT NULL DEFAULT 'non-veg',
+    latitude      REAL    NOT NULL,
+    longitude     REAL    NOT NULL,
+    image         TEXT,
+    cuisines      TEXT,
+    area          TEXT,
+    phone         TEXT,
+    cost_for_two  INTEGER,
+    opens_at      TEXT,
+    closes_at     TEXT,
+    rating        REAL,
+    rating_count  INTEGER,
+    known_for     TEXT,
+    amenities     TEXT
 );
 
 CREATE TABLE floors (
@@ -30,6 +40,7 @@ CREATE TABLE bookings (
     date      TEXT    NOT NULL,
     time_slot TEXT    NOT NULL,
     user_name TEXT    NOT NULL DEFAULT 'guest',
+    group_id  TEXT,
     UNIQUE (seat_id, date, time_slot)
 );
 
@@ -48,4 +59,13 @@ CREATE TABLE holds (
     user_name  TEXT    NOT NULL,
     expires_at TEXT    NOT NULL,
     UNIQUE (seat_id, date, time_slot)
+);
+
+CREATE TABLE reviews (
+    id            INTEGER PRIMARY KEY,
+    restaurant_id INTEGER NOT NULL REFERENCES restaurants(id),
+    author_name   TEXT    NOT NULL,
+    rating        INTEGER NOT NULL,
+    body          TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL
 );

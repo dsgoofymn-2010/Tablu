@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from db import DB_PATH, get_connection
+from profiles import REVIEWS, profile_row
 from security import hash_password
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
@@ -50,6 +51,20 @@ def seed():
             (name, lat, lng),
         )
         restaurant_id = cur.lastrowid
+        profile = profile_row(name)
+        if profile:
+            conn.execute(
+                "UPDATE restaurants SET cuisines = ?, area = ?, phone = ?, "
+                "cost_for_two = ?, opens_at = ?, closes_at = ?, rating = ?, "
+                "rating_count = ?, known_for = ?, amenities = ? WHERE id = ?",
+                [*profile, restaurant_id],
+            )
+        for author, rating, body, created in REVIEWS.get(name, []):
+            conn.execute(
+                "INSERT INTO reviews (restaurant_id, author_name, rating, body, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (restaurant_id, author, rating, body, created),
+            )
         seat_ids = []
 
         for floor_name in FLOORS:

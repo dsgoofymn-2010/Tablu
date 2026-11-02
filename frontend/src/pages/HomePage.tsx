@@ -171,7 +171,7 @@ export const HomePage: React.FC = () => {
           <h1>
             Your table
             <br />
-            is <em>waiting.</em>
+            is waiting.
           </h1>
 
           <p className="hero-lede">
@@ -239,13 +239,6 @@ export const HomePage: React.FC = () => {
               )}
             </h2>
           </div>
-          <p className="section-count">
-            {loading
-              ? 'Checking availability…'
-              : `${filteredRestaurants.length} ${filteredRestaurants.length === 1 ? 'restaurant' : 'restaurants'}${
-                  userLocation ? ' · nearest first' : ''
-                }`}
-          </p>
         </div>
 
         {locNotice && (
