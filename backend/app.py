@@ -256,7 +256,14 @@ def list_restaurants():
             return jsonify({"error": "lat/lng out of range"}), 400
 
     sql = """
-        SELECT r.id, r.name, r.category, r.latitude, r.longitude, r.image,
+        SELECT r.id, r.name, r.category, r.latitude, r.longitude,
+               COALESCE(r.image, (
+                   SELECT p.path FROM photos p
+                   WHERE p.restaurant_id = r.id
+                   ORDER BY p.id LIMIT 1
+               )) AS image,
+               r.cuisines, r.area, r.cost_for_two, r.opens_at, r.closes_at,
+               r.rating, r.rating_count,
                (SELECT COUNT(*) FROM floors f WHERE f.restaurant_id = r.id) AS floors,
                (SELECT COUNT(*) FROM seats s JOIN floors f ON s.floor_id = f.id
                  WHERE f.restaurant_id = r.id) AS tables,
@@ -276,7 +283,7 @@ def list_restaurants():
     rows = conn.execute(sql, params).fetchall()
     conn.close()
 
-    restaurants = [dict(row) for row in rows]
+    restaurants = [profile_dict(row) for row in rows]
     if user_lat is not None:
         for r in restaurants:
             r["distance_km"] = haversine_km(

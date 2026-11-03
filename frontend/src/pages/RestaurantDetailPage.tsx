@@ -18,6 +18,10 @@ import {
   Copy,
   Phone,
   ArrowRight,
+  Info,
+  Camera,
+  Images,
+  Utensils,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -99,6 +103,13 @@ const TABS = [
   { id: 'book', label: 'Book a Table' },
 ] as const;
 
+const TAB_ICONS = {
+  overview: Info,
+  photos: Camera,
+  reviews: Star,
+  book: CalendarDays,
+} as const;
+
 type TabId = (typeof TABS)[number]['id'];
 
 type PhotoFilter = 'all' | 'food' | 'ambience';
@@ -136,6 +147,17 @@ const compactTime = (t: string) => {
   const hour = h % 12 === 0 ? 12 : h % 12;
   return m === 0 ? `${hour} ${suffix}` : `${hour}:${`${m}`.padStart(2, '0')} ${suffix}`;
 };
+
+const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase();
+
+const toneFor = (id: number) => `tone-${id % 5}`;
 
 const friendlyDate = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number);
@@ -523,11 +545,12 @@ export const RestaurantDetailPage: React.FC = () => {
         <ChevronLeft size={15} /> All restaurants
       </Link>
 
-      <header className="venue-header">
-        <div className="venue-header-main">
+      <section className="venue-hero" aria-label={`${restaurant.name} overview`}>
+        <div className="venue-hero-copy">
           <p className="eyebrow">
             {(restaurant.cuisines.length ? restaurant.cuisines : [restaurant.category]).join(' · ')}
           </p>
+
           <div className="venue-title-row">
             <h1>{restaurant.name}</h1>
             {restaurant.rating !== null && (
@@ -542,6 +565,7 @@ export const RestaurantDetailPage: React.FC = () => {
               </div>
             )}
           </div>
+
           {restaurant.area && (
             <p className="venue-area">
               <MapPin size={13} /> {restaurant.area}
@@ -551,11 +575,10 @@ export const RestaurantDetailPage: React.FC = () => {
           <div className="venue-facts">
             {hoursLabel && (
               <span className={`status-pill${open ? ' is-open' : ' is-closed'}`}>
-                {open ? `Open · closes ${clockLabel(restaurant.closes_at!)}` : `Closed · opens ${clockLabel(restaurant.opens_at!)}`}
+                {open
+                  ? `Open · closes ${clockLabel(restaurant.closes_at!)}`
+                  : `Closed · opens ${clockLabel(restaurant.opens_at!)}`}
               </span>
-            )}
-            {restaurant.cost_for_two && (
-              <span className="venue-fact">₹{restaurant.cost_for_two.toLocaleString('en-IN')} for two</span>
             )}
             {restaurant.phone && (
               <a className="venue-fact venue-phone" href={telHref}>
@@ -586,50 +609,120 @@ export const RestaurantDetailPage: React.FC = () => {
             )}
           </div>
         </div>
-      </header>
 
-      <div className="gallery-strip" aria-label="Photo previews">
-        {heroPhoto && (
-          <button
-            type="button"
-            className="gallery-tile is-hero"
-            onClick={() => jumpToTab('photos')}
-          >
-            <img src={heroPhoto.path} alt={heroPhoto.label} className="gallery-img" />
-            <span className="tile-label">{heroPhoto.label}</span>
-            <span className="gallery-overlay">
-              <span className="gallery-pill">
-                View all photos <ArrowRight size={13} />
+        <div className="venue-hero-media">
+          <button type="button" className="venue-cover" onClick={() => jumpToTab('photos')}>
+            {heroPhoto ? (
+              <img src={heroPhoto.path} alt={heroPhoto.label} className="venue-cover-img" />
+            ) : (
+              <span className={`cover-fallback ${toneFor(restaurant.id)}`} aria-hidden="true">
+                <span className="cover-monogram">{initialsOf(restaurant.name)}</span>
+                <span className="cover-cuisine">
+                  {restaurant.cuisines[0] || restaurant.category} · Chennai
+                </span>
               </span>
+            )}
+            <span className="cover-shade" aria-hidden="true" />
+            <span className="cover-label">{heroPhoto?.label ?? `An evening at ${restaurant.name}`}</span>
+            <span className="cover-cta">
+              <Images size={13} /> View gallery
             </span>
           </button>
+
+          <div className="venue-thumbs">
+            {photos.slice(1, 3).map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="venue-thumb"
+                onClick={() => jumpToTab('photos')}
+              >
+                <img src={p.path} alt={p.label} loading="lazy" />
+                <span className="tile-label">{p.label}</span>
+              </button>
+            ))}
+            {Array.from({ length: Math.max(0, 2 - photos.slice(1, 3).length) }).map((_, i) => (
+              <span
+                key={`thumb-fallback-${i}`}
+                className={`venue-thumb-fallback tone-${(restaurant.id + i + 1) % 5}`}
+                aria-hidden="true"
+              >
+                <span className="thumb-glyph">
+                  {i === 0 ? <Utensils size={22} /> : <Sparkles size={22} />}
+                </span>
+                <span className="thumb-caption">{i === 0 ? 'Dining room' : 'Chef’s table'}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className="venue-quickfacts">
+        {restaurant.rating !== null && (
+          <div className="quickfact">
+            <span className="quickfact-icon">
+              <Star size={16} />
+            </span>
+            <div className="quickfact-text">
+              <strong>{restaurant.rating.toFixed(1)}</strong>
+              <span>{(restaurant.rating_count ?? 0).toLocaleString('en-IN')} ratings</span>
+            </div>
+          </div>
         )}
-        {photos.slice(1, 3).map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className="gallery-tile"
-            onClick={() => jumpToTab('photos')}
-          >
-            <img src={p.path} alt={p.label} className="gallery-img" loading="lazy" />
-            <span className="tile-label">{p.label}</span>
-          </button>
-        ))}
+        {restaurant.cost_for_two && (
+          <div className="quickfact">
+            <span className="quickfact-icon">
+              <Utensils size={16} />
+            </span>
+            <div className="quickfact-text">
+              <strong>₹{restaurant.cost_for_two.toLocaleString('en-IN')}</strong>
+              <span>for two, approx.</span>
+            </div>
+          </div>
+        )}
+        {hoursLabel && (
+          <div className="quickfact">
+            <span className="quickfact-icon">
+              <Clock size={16} />
+            </span>
+            <div className="quickfact-text">
+              <strong>{hoursLabel}</strong>
+              <span>{open ? 'Open now' : 'Closed right now'}</span>
+            </div>
+          </div>
+        )}
+        <div className="quickfact">
+          <span className="quickfact-icon">
+            <Armchair size={16} />
+          </span>
+          <div className="quickfact-text">
+            <strong>{seats.length} tables</strong>
+            <span>
+              across {floors.length} {floors.length === 1 ? 'floor' : 'floors'}
+            </span>
+          </div>
+        </div>
       </div>
 
       <nav className="detail-tabs" role="tablist" aria-label="Restaurant sections" ref={tabsRef}>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            className={`detail-tab${activeTab === t.id ? ' is-active' : ''}`}
-            aria-selected={activeTab === t.id}
-            onClick={() => setActiveTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
+        {TABS.map((t) => {
+          const TabIcon = TAB_ICONS[t.id];
+          const count = t.id === 'photos' ? photos.length : t.id === 'reviews' ? reviews.length : null;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              className={`detail-tab${activeTab === t.id ? ' is-active' : ''}`}
+              aria-selected={activeTab === t.id}
+              onClick={() => setActiveTab(t.id)}
+            >
+              <TabIcon size={15} />
+              {t.label}
+              {count !== null && <span className="detail-tab-count">{count}</span>}
+            </button>
+          );
+        })}
       </nav>
 
       <div className={`detail-layout${activeTab === 'book' ? ' is-book' : ''}`}>
